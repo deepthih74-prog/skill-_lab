@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meeting Action Item Extractor</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f6fb;
+      color: #1f2937;
+    }
+    .container {
+      max-width: 850px;
+      margin: 40px auto;
+      padding: 28px;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.08);
+    }
+    h1 { margin-top: 0; color: #183b68; }
+    p { line-height: 1.5; color: #526174; }
+    label { display: block; font-weight: bold; margin: 18px 0 8px; }
+    textarea {
+      width: 100%;
+      min-height: 190px;
+      padding: 13px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font: 15px/1.5 Arial, sans-serif;
+      resize: vertical;
+    }
+    .buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 11px 17px;
+      font-size: 14px;
+      cursor: pointer;
+      background: #245da8;
+      color: white;
+    }
+    button.secondary { background: #e7edf5; color: #23364d; }
+    button:hover { opacity: .9; }
+    #message { margin-top: 14px; font-weight: bold; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      background: white;
+    }
+    th, td { padding: 12px; border: 1px solid #dbe3ed; text-align: left; }
+    th { background: #edf3fa; color: #183b68; }
+    .table-wrap { overflow-x: auto; }
+    .hint { font-size: 13px; }
+    @media (max-width: 600px) {
+      .container { margin: 14px; padding: 18px; }
+      th, td { padding: 9px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Meeting Action Item Extractor</h1>
+    <p>Paste your meeting notes below. The tool finds lines written in this format:
+      <strong>Name: task by deadline.</strong>
+    </p>
+
+    <label for="notes">Meeting notes</label>
+    <textarea id="notes" placeholder="Example:
+Alex: Prepare wireframes by Wednesday.
+John: Complete the design by Friday."></textarea>
+
+    <div class="buttons">
+      <button type="button" onclick="extractActions()">Extract action items</button>
+      <button type="button" class="secondary" onclick="loadSample()">Load sample</button>
+      <button type="button" class="secondary" onclick="clearAll()">Clear</button>
+      <button type="button" class="secondary" onclick="downloadCSV()">Download CSV</button>
+    </div>
+
+    <div id="message" role="status"></div>
+    <section aria-live="polite">
+      <h2>Extracted action items</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Owner</th><th>Task</th><th>Deadline</th></tr>
+          </thead>
+          <tbody id="results">
+            <tr><td colspan="3">No action items extracted yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <p class="hint">This standalone version works offline and uses a simple text pattern. It does not call Gemini AI.</p>
+  </main>
+
+  <script>
+    let extractedActions = [];
+
+    function extractActions() {
+      const notes = document.getElementById("notes").value;
+      const rows = [];
+      const pattern = /^([^:\n]+):\s*(.+?)\s+by\s+([^\n.]+)[.]?$/i;
+
+      for (const line of notes.split(/\r?\n/)) {
+        const match = line.trim().match(pattern);
+        if (match) {
+          rows.push({
+            owner: match[1].trim(),
+            task: match[2].trim(),
+            deadline: match[3].trim()
+          });
+        }
+      }
+
+      extractedActions = rows;
+      const tbody = document.getElementById("results");
+      tbody.replaceChildren();
+
+      if (rows.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 3;
+        td.textContent = "No matching action items found. Use: Name: task by deadline.";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        document.getElementById("message").textContent = "No action items found.";
+        return;
+      }
+
+      for (const item of rows) {
+        const tr = document.createElement("tr");
+        for (const value of [item.owner, item.task, item.deadline]) {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      document.getElementById("message").textContent =
+        rows.length + " action item(s) extracted successfully.";
+    }
+
+    function loadSample() {
+      document.getElementById("notes").value =
+        "Alex: Prepare wireframes by Wednesday.\n" +
+        "John: Complete the design by Friday.\n" +
+        "Priya: Review the landing page by Monday.";
+      extractActions();
+    }
+
+    function clearAll() {
+      document.getElementById("notes").value = "";
+      extractedActions = [];
+      document.getElementById("results").innerHTML =
+        '<tr><td colspan="3">No action items extracted yet.</td></tr>';
+      document.getElementById("message").textContent = "";
+    }
+
+    function downloadCSV() {
+      if (extractedActions.length === 0) {
+        document.getElementById("message").textContent =
+          "Extract action items before downloading the CSV.";
+        return;
+      }
+      const escapeCSV = value => '"' + String(value).replace(/"/g, '""') + '"';
+      const lines = [
+        ["Owner", "Task", "Deadline"],
+        ...extractedActions.map(item => [item.owner, item.task, item.deadline])
+      ];
+      const csv = lines.map(row => row.map(escapeCSV).join(",")).join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "meeting_action_items.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
